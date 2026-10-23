@@ -192,8 +192,9 @@ function installSceneDrag(root){
 function activeMotion(sc,id,localTime){const cues=(sc.motionCues||[]).filter(c=>c.character===id&&localTime>=Number(c.at||0)).sort((a,b)=>Number(a.at)-Number(b.at));return cues.length?cues[cues.length-1].motion:(sc.motion||'idle')}
 const voiceDurations={};
 let timelineClock=null,timelineClockStart=0,timelineClockOffset=0;
-function stopTimelineClock(){if(timelineClock){clearInterval(timelineClock);timelineClock=null}}
+function stopTimelineClock(){if(timelineClock!==null){cancelAnimationFrame(timelineClock);timelineClock=null}}
 function renderProTracks(){
+ stopTimelineClock();
  const root=$('proTracks');if(!root)return;
  const total=storyboard.reduce((a,s)=>a+Math.max(1,s.end-s.start),0);
  if(!storyboard.length){root.innerHTML='';return}
@@ -205,6 +206,23 @@ function renderProTracks(){
  const motions=storyboard.flatMap((sc,i)=>(sc.motionCues||[]).map(c=>({i,sc,c}))).map(({i,sc,c})=>block((people.find(p=>p.id===c.character)?.name||c.character)+' · '+c.motion,percent(sc.start+Number(c.at||0)),Math.min(12,Math.max(2,percent(sc.end-sc.start-Number(c.at||0)))),'pro-motion',i)).join('');
  const voices=storyboard.flatMap((sc,i)=>people.filter(p=>characterAudioFiles[i+':'+p.id]).map(p=>({i,sc,p}))).map(({i,sc,p})=>block('🎤 '+p.name,percent(sc.start+Number(sc.voiceOffsets?.[p.id]||0)),Math.max(1,percent(Math.min(Number(voiceDurations[i+':'+p.id]||2),Math.max(0,sc.end-sc.start-Number(sc.voiceOffsets?.[p.id]||0))))),'pro-voice',i,p.id)).join('');
  root.innerHTML=`<div class="scene pro-timeline"><h3>🎛️ Mehrspur-Übersicht</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" id="timelineClockPlay" style="width:auto">▶ Zeitzeiger starten</button><button type="button" id="timelineClockStop" class="alt" style="width:auto">⏹ Stoppen</button><span id="timelineClockText">0,0 / ${total.toFixed(1)} s</span></div><p class="muted">Szenen, Bewegungsmarken und hochgeladene Stimmen auf einer gemeinsamen Zeitachse. Ziehe rosa Sprachclips mit dem Finger nach links oder rechts. Die Clips bleiben innerhalb ihrer Szene. Andere Blöcke öffnen die Vorschau.</p><div class="pro-scroll"><div class="pro-inner"><div class="pro-ruler"><div id="timelinePlayhead" style="position:absolute;left:0%;top:0;bottom:-235px;width:2px;background:#e63972;z-index:9;pointer-events:none"></div>${Array.from({length:Math.min(21,Math.floor(total/5)+1)},(_,i)=>`<span style="left:${percent(i*5)}%">${i*5}s</span>`).join('')}</div>${lane('🎞️ Szenen',scenes)}${lane('🎭 Bewegung',motions)}${lane('🎤 Stimmen',voices)}${lane('🎵 Musik',`<div class="pro-music">${$('musicFile')?.files?.[0]?'Musik geladen':'Musikdatei unten auswählen'}</div>`)}</div></div><p class="muted">Gesamtlänge: ${total} Sekunden. Die Breite der Sprachclips entspricht der ermittelten Audiodauer (am Szenenende abgeschnitten). Sprachclips können innerhalb ihrer Szene verschoben werden; die Änderungen bitte im Projekt speichern.</p></div>`;
+ const playButton=root.querySelector('#timelineClockPlay');
+ const stopButton=root.querySelector('#timelineClockStop');
+ const head=root.querySelector('#timelinePlayhead');
+ const clockText=root.querySelector('#timelineClockText');
+ let elapsed=0;
+ const drawClock=()=>{head.style.left=(Math.min(100,Math.max(0,elapsed/total*100)))+'%';clockText.textContent=elapsed.toFixed(1).replace('.',',')+' / '+total.toFixed(1).replace('.',',')+' s'};
+ const halt=()=>{stopTimelineClock();playButton.textContent='▶ Zeitzeiger starten'};
+ playButton.onclick=()=>{
+   if(timelineClock){halt();return}
+   if(elapsed>=total)elapsed=0;
+   const start=performance.now()-elapsed*1000;
+   playButton.textContent='⏸ Pause';
+   const tick=()=>{if(!head.isConnected){stopTimelineClock();return}elapsed=Math.min(total,(performance.now()-start)/1000);drawClock();if(elapsed>=total){halt();return}timelineClock=requestAnimationFrame(tick)};
+   timelineClock=requestAnimationFrame(tick);
+ };
+ stopButton.onclick=()=>{halt();elapsed=0;drawClock()};
+ drawClock();
  root.querySelectorAll('[data-pro-scene]:not([data-drag-voice])').forEach(b=>b.onclick=()=>{sceneIndex=+b.dataset.proScene;tab('preview')});
  root.querySelectorAll('[data-drag-voice]').forEach(b=>{
  let drag=null;
